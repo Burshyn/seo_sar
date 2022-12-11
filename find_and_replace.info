@@ -1,0 +1,6 @@
+;----------// Module Information
+	name = Find and replace content
+	description = The module allows you to search and replace content in tables.
+	package = custom
+	version = 1.0 
+	core = 7.x

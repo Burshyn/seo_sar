@@ -1,0 +1,297 @@
+<?php
+
+/**
+ * Implements hook_menu().
+ */
+function find_and_replace_menu()
+{
+	$items = [];
+	$items['admin/config/services/far'] = [
+		'title' => 'Find and replace links in block',
+		'page callback' => 'drupal_get_form',
+		'page arguments' => ['find_and_replace_block_form'],
+		'access arguments' => ['access find and replace'],
+	];
+	$items['admin/config/services/sar'] = [
+		'title' => 'Search and replace links',
+		'page callback' => 'drupal_get_form',
+		'page arguments' => ['find_and_replace_sar_form'],
+		'access arguments' => ['access find and replace'],
+	];
+	return $items;
+}
+
+/**
+ * Implements hook_permission().
+ */
+function find_and_replace_permission()
+{
+	return [
+		'access find and replace' => [
+			'title' => t('Access find and replace module'),
+		]
+	];
+}
+
+/**
+ * Ручной поиск по содержимому блоков.
+ */
+function find_and_replace_block_form()
+{
+	$form = [];
+
+	$form['far_fieldset'] = [
+		'#type' => 'fieldset',
+		'#title' => t('Module information'),
+		'#weight' => -5,
+		'#collapsible' => FALSE,
+		'#collapsed' => FALSE,
+	];
+
+	$form['far_fieldset']['find'] = [
+		'#type' => 'textfield',
+		'#title' => 'Search for',
+		'#description' => t('<em>Example: /articles/name_article</em>'),
+		'#required' => TRUE,
+	];
+
+	$form['far_fieldset']['replace'] = [
+		'#type' => 'textfield',
+		'#title' => 'Replace with',
+		'#description' => t('<em>Example: /articles/new_name_article</em>'),
+	];
+
+	$form['far_fieldset']['submit'] = [
+		'#type' => 'submit',
+		'#value' => 'Search and replace',
+		'#attributes' => [
+			'class' => ['btn', 'btn-primary']
+		],
+		'#weight' => 10,
+	];
+
+	return $form;
+}
+
+function find_and_replace_block_form_submit($form, $form_state) {
+	// All values
+	$find = trim($form_state['values']['find']);
+	$replace = trim($form_state['values']['replace']);
+
+	// Find content.
+	if (!empty($find)) {
+		$find_content = db_select('block_custom', 'b')
+			->fields('b', ['bid', 'body'])
+			->condition('b.body', '%' . db_like($find) . '%', 'LIKE')
+			->execute()->fetchAll();
+	}
+
+	// If we not find.
+	if (empty($find_content)) drupal_set_message('No matches found.');
+
+	// If we find
+	if (!empty($find_content) and empty($replace)) {
+		foreach ($find_content as $link) {
+			$link_to_block = l($link->bid, '/admin/structure/block/manage/block/'.$link->bid.'/configure');
+			drupal_set_message('We find contents in block #' . $link_to_block . '.');
+		}
+	}
+
+	// If we find and won't replace.
+	if (!empty($find_content) and !empty($replace)) {
+		db_update('block_custom')
+			->expression('body', 'replace(body, :find, :replace)', [
+				':find' => $find,
+				':replace' => $replace
+			])->execute();
+		drupal_set_message('We found and replaced ' . count($find_content) . ' links.');
+	}
+
+}
+
+/**
+ * Поиск ссылок в описаниях статей, терминов и блоках и замена на актуальные.
+ */
+function find_and_replace_sar_form($form, &$form_state)
+{
+	$form = [];
+
+	$form['sar_fieldset'] = [
+		'#type' => 'fieldset',
+		'#weight' => 0,
+		'#collapsible' => FALSE,
+		'#collapsed' => FALSE,
+	];
+
+	$form['sar_fieldset']['entity_type'] = [
+		'#title' => t('Entity type'),
+		'#description' => t('Select the type of entity to be processed.'),
+		'#type' => 'select',
+		'#options' => [
+			'block' => 'Blocks',
+			'node' => 'Nodes',
+			'term' => 'Terms',
+			'comment' => 'Comments (disable)',
+		],
+	];
+
+	$form['sar_fieldset']['submit'] = [
+		'#type' => 'submit',
+		'#value' => 'Search and replace',
+		'#attributes' => [
+			'class' => ['btn', 'btn-primary']
+		],
+		'#weight' => 10,
+	];
+
+	return $form;
+}
+function find_and_replace_sar_form_submit($form, &$form_state)
+{
+	// Массив с бач операциями и конфиг переменная.
+	$operations = [];
+
+	// Тип сущности для обработки.
+	$entity_type = trim($form_state['values']['entity_type']);
+
+	/** Обрабатываем БЛОКИ **/
+	if ($entity_type == 'block') {
+		// Получаем все кастомные блоки для поиска ссылок.
+		$find_blocks = db_select('block_custom', 'b')->fields('b', ['bid', 'body'])->execute()->fetchAll();
+	}
+
+	/** Обрабатываем НОДЫ **/
+	if ($entity_type == 'node') {
+		// Получаем все блоки для поиска ссылок.
+		$find_blocks = db_select('field_data_body', 'body')
+			->fields('body', ['entity_id', 'entity_type', 'body_value'])
+			->execute()->fetchAll();
+	}
+
+	/** Обрабатываем ТЕРМИНЫ **/
+	if ($entity_type == 'term') {
+		// Получаем все блоки для поиска ссылок.
+		$find_blocks = db_select('taxonomy_term_data', 'term')
+			->fields('term', ['tid', 'description'])
+			->execute()->fetchAll();
+	}
+
+	if (!empty($find_blocks)) {
+		foreach ($find_blocks as $find_block) {
+			// Формируем массив для бач обработчика.
+			$operations[] =  ['find_and_replace_sar_processing', [$find_block, $entity_type]];
+		}
+
+		// Запускаем батч.
+		if (isset($operations)) {
+			batch_set([
+				'operations' => $operations,
+				'finished' => 'find_and_replace_sar_finished'
+			]);
+		}
+	}
+
+}
+
+/**
+ * Функция поиска и замены старых (редиректных) урлов на новые актуальные (не редиректные).
+ */
+function find_and_replace_sar_processing($find_block, $entity_type, &$context)
+{
+	if (!isset($context['results']['updated'], $context['results']['entity_type'])) {
+		$context['results']['updated'] = 0;
+		$context['results']['entity_type'] = $entity_type;
+	}
+
+	// Достаем содержимое
+	$dom_document = '';
+	$entity_id = 0;
+	switch ($entity_type) {
+		case 'block':
+			$entity_id = $find_block->bid;
+			$dom_document = $find_block->body;
+			break;
+		case 'node':
+			$entity_id = $find_block->entity_id;
+			$dom_document = $find_block->body_value;
+			break;
+		case 'term':
+			$entity_id = $find_block->tid;
+			$dom_document = $find_block->description;
+			break;
+	}
+
+	// Поиск по содержимому.
+	$dom = new DOMDocument();
+	$dom->loadHTML($dom_document);
+
+	// Проверяем каждую ссылку.
+	foreach($dom->getElementsByTagName('a') as $each_a) {
+		$f_href = ltrim($each_a->getAttribute('href'), '/');
+
+		// Ищем данный урл в списке редиректов.
+		if (!empty($f_href) and ($f_href != '/')) {
+			$query = db_select('redirect', 'r');
+			$query->innerJoin('url_alias', 'a', 'a.source = r.redirect');
+			$query->fields('r', ['source', 'redirect']);
+			$query->fields('a', ['alias']);
+			$query->condition('r.source', $f_href, '=');
+			$find_redirect = $query->execute()->fetchAll();
+
+			// Если нашли урл который нужно заменить:
+			if (!empty($find_redirect)) {
+				// Достаем самый последний результат если их несколько.
+				foreach ($find_redirect as $redirect) {
+					$find = $redirect->source;
+					$replace = $redirect->alias;
+				}
+//				dpm($find_block);
+//				dpm($find_redirect);
+
+				/** Обновляем содержимое блоков на актуальную ссылку. **/
+				if ($entity_type == 'block' and !empty($find) and !empty($replace)) {
+					db_update('block_custom')
+						->expression('body', 'replace(body, :find, :replace)', [
+							':find' => $find,
+							':replace' => $replace
+						])->condition('bid', $find_block->bid, '=')->execute();
+				}
+
+				/** Обновляем содержимое нод на актуальную ссылку. **/
+				if ($entity_type == 'node' and !empty($find) and !empty($replace)) {
+					db_update('field_data_body')
+						->expression('body_value', 'replace(body_value, :find, :replace)', [
+							':find' => $find,
+							':replace' => $replace
+						])->condition('entity_id', $find_block->entity_id, '=')->execute();
+				}
+
+				/** Обновляем содержимое терминов на актуальную ссылку. **/
+				if ($entity_type == 'term' and !empty($find) and !empty($replace)) {
+					db_update('taxonomy_term_data')
+						->expression('description', 'replace(description, :find, :replace)', [
+							':find' => $find,
+							':replace' => $replace
+						])->condition('tid', $find_block->tid, '=')->execute();
+				}
+
+				// Считаем обновленных сущностей.
+				$context['results']['updated']++;
+			}
+		}
+
+
+	}
+
+	// Сообщение выводимое под прогресс-баром после окончания текущей операции
+	$context['message'] = 'Checking '. $entity_type .' entity with ID: <em>' . $entity_id . '</em>';
+}
+function find_and_replace_sar_finished($success, $results, $operations)
+{
+	if ($success) {
+		drupal_set_message('Updated ' . $results['updated'] . ' ' . $results['entity_type'] . 's.');
+	}
+	else {
+		drupal_set_message('Completed with errors.', 'error');
+	}
+}
