@@ -232,7 +232,7 @@ function find_and_replace_sar_processing($find_block, $entity_type, &$context)
 		// Ищем данный урл в списке редиректов.
 		if (!empty($f_href) and ($f_href != '/')) {
 			$query = db_select('redirect', 'r');
-			$query->leftJoin('url_alias', 'a', 'a.source = r.redirect');
+			$query->innerJoin('url_alias', 'a', 'a.source = r.redirect');
 			$query->fields('r', ['source', 'redirect']);
 			$query->fields('a', ['alias']);
 			$query->condition('r.source', $f_href, '=');
@@ -240,20 +240,12 @@ function find_and_replace_sar_processing($find_block, $entity_type, &$context)
 
 			// Если нашли урл который нужно заменить:
 			if (!empty($find_redirect)) {
-				// Достаем самый последний результат если их несколько.
+				// Достаем результат.
 				foreach ($find_redirect as $redirect) {
+					// Что меняем.
 					$find = $redirect->source;
-					// Проверяем есть ли алиас редиректа
-					if (!empty($redirect->alias)) {
-						$replace = $redirect->alias;
-					} elseif (!empty($redirect->redirect)) {
-						// Если нет, то проверяем куда ведет прямой урл редиректа.
-						// Если не на программную страницу, то пропускаем и даем перезаписать.
-						$exp_url_redirect = explode('/', $redirect->redirect);
-						if (!in_array($exp_url_redirect[0], ['node', 'taxonomy', 'user'])) {
-							$replace = $redirect->redirect;
-						}
-					}
+					// На что меняем.
+					$replace = $redirect->alias;
 				}
 
 				/** Обновляем содержимое блоков на актуальную ссылку. **/
