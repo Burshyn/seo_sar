@@ -232,7 +232,7 @@ function find_and_replace_sar_processing($find_block, $entity_type, &$context)
 		// Ищем данный урл в списке редиректов.
 		if (!empty($f_href) and ($f_href != '/')) {
 			$query = db_select('redirect', 'r');
-			$query->innerJoin('url_alias', 'a', 'a.source = r.redirect');
+			$query->leftJoin('url_alias', 'a', 'a.source = r.redirect');
 			$query->fields('r', ['source', 'redirect']);
 			$query->fields('a', ['alias']);
 			$query->condition('r.source', $f_href, '=');
@@ -244,8 +244,22 @@ function find_and_replace_sar_processing($find_block, $entity_type, &$context)
 				foreach ($find_redirect as $redirect) {
 					// Что меняем.
 					$find = $redirect->source;
-					// На что меняем.
-					$replace = $redirect->alias;
+
+					// Проверяем есть ли алиас редиректа
+					if (!empty($redirect->alias)) {
+						// На что меняем.
+						$replace = $redirect->alias;
+					} elseif (!empty($redirect->redirect)) {
+
+						// Если нет, то проверяем куда ведет прямой урл редиректа.
+						// Если не на программную страницу, то пропускаем и даем перезаписать.
+						$exp_url_redirect = explode('/', $redirect->redirect);
+						if (!in_array($exp_url_redirect[0], ['node', 'taxonomy', 'user'])) {
+							// На что меняем.
+							$replace = $redirect->redirect;
+							// TODO:Из-за цепочки редиректов, приходится прогонять несколько раз
+						}
+					}
 				}
 
 				/** Обновляем содержимое блоков на актуальную ссылку. **/
