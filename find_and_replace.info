@@ -1,6 +1,10 @@
 ;----------// Module Information
 	name = Find and replace content
 	description = The module allows you to search and replace content in tables.
-	package = custom
-	version = 1.0 
+	package = SEO_SHMEO
+
+	version = 1.1
 	core = 7.x
+
+;----------// URL Settings
+    configure = admin/config/services/find_replace

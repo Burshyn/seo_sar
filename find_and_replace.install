@@ -1,0 +1,51 @@
+<?php
+
+/**
+ * Implements hook_schema().
+ */
+function find_and_replace_schema() {
+	$schema = array();
+
+    $schema['find_and_replace_stats'] = array(
+        'description' => 'Holds info on recent replacements in case undo is needed.',
+        'fields' => array(
+            'far_id' => array(
+                'type' => 'serial',
+                'description' => 'Row identifier',
+                'unsigned' => TRUE,
+                'not null' => TRUE,
+            ),
+            'type' => array(
+                'description' => 'Handler type',
+                'type' => 'varchar',
+                'length' => 256,
+                'not null' => TRUE,
+            ),
+            'id_entity' => array(
+                'description' => 'Entity ID where we change the link.',
+                'type' => 'int',
+                'not null' => TRUE,
+            ),
+            'searched' => array(
+                'description' => 'Text that was searched for',
+                'type' => 'varchar',
+                'length' => 256,
+                'not null' => TRUE,
+            ),
+            'replaced' => array(
+                'description' => 'Text that was used as replacement',
+                'type' => 'varchar',
+                'length' => 256,
+                'not null' => TRUE,
+            ),
+            'time' => array(
+                'description' => 'How long the replacement took',
+                'type' => 'int',
+                'not null' => TRUE,
+            ),
+        ),
+        'primary key' => array('far_id'),
+    );
+
+	return $schema;
+}

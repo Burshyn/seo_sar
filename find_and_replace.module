@@ -6,13 +6,23 @@
 function find_and_replace_menu()
 {
 	$items = [];
-	$items['admin/config/services/far'] = [
+
+	$items['admin/config/services/find_replace'] = [
+		'title' => 'Search and replace',
+		'description' => 'Search and replace content pages.',
+		'page callback' => 'drupal_get_form',
+		'page arguments' => ['find_and_replace_dashboard'],
+		'access arguments' => ['access find and replace'],
+		'file' => 'inc/find_and_replace.dashboard.inc',
+	];
+
+	$items['admin/config/services/find_replace/far'] = [
 		'title' => 'Find and replace links in block',
 		'page callback' => 'drupal_get_form',
 		'page arguments' => ['find_and_replace_block_form'],
 		'access arguments' => ['access find and replace'],
 	];
-	$items['admin/config/services/sar'] = [
+	$items['admin/config/services/find_replace/sar'] = [
 		'title' => 'Search and replace links',
 		'page callback' => 'drupal_get_form',
 		'page arguments' => ['find_and_replace_sar_form'],
@@ -131,6 +141,7 @@ function find_and_replace_sar_form($form, &$form_state)
 			'block' => 'Blocks',
 			'node' => 'Nodes',
 			'term' => 'Terms',
+			'panel' => 'Panels',
 			'comment' => 'Comments (disable)',
 		],
 	];
@@ -176,6 +187,24 @@ function find_and_replace_sar_form_submit($form, &$form_state)
 			->execute()->fetchAll();
 	}
 
+	/** Обрабатываем ПАНЕЛИ **/
+	if ($entity_type == 'panel') {
+		// Получаем все блоки для поиска ссылок.
+		$find_blocks = db_select('panels_pane', 'pane')
+			->fields('pane', ['pid', 'configuration'])
+			->condition('pane.type', 'custom')
+			->execute()->fetchAll();
+	}
+
+	/** Обрабатываем КОММЕНТАРИИ **/
+	if ($entity_type == 'comment') {
+		// Получаем все блоки для поиска ссылок.
+//		$find_blocks = db_select('field_data_comment_body', 'comment')
+//			->fields('comment', ['entity_id', 'comment_body_value'])
+//			->execute()->fetchAll();
+		// TODO: Реализовать загрузку и обработку комментариев
+	}
+
 	if (!empty($find_blocks)) {
 		foreach ($find_blocks as $find_block) {
 			// Формируем массив для бач обработчика.
@@ -219,6 +248,10 @@ function find_and_replace_sar_processing($find_block, $entity_type, &$context)
 			$entity_id = $find_block->tid;
 			$dom_document = $find_block->description;
 			break;
+		case 'panel':
+			$entity_id = $find_block->pid;
+			$dom_document = $find_block->configuration;
+			break;
 	}
 
 	// Поиск по содержимому.
@@ -235,7 +268,8 @@ function find_and_replace_sar_processing($find_block, $entity_type, &$context)
 			$query->leftJoin('url_alias', 'a', 'a.source = r.redirect');
 			$query->fields('r', ['source', 'redirect']);
 			$query->fields('a', ['alias']);
-			$query->condition('r.source', $f_href, '=');
+			$query->condition('r.status', 1);
+			$query->condition('r.source', $f_href);
 			$find_redirect = $query->execute()->fetchAll();
 
 			// Если нашли урл который нужно заменить:
@@ -262,13 +296,17 @@ function find_and_replace_sar_processing($find_block, $entity_type, &$context)
 					}
 				}
 
+				// TEST
+//				 dpm($find_block);
+//				 dpm($find_redirect);
+
 				/** Обновляем содержимое блоков на актуальную ссылку. **/
 				if ($entity_type == 'block' and !empty($find) and !empty($replace)) {
 					db_update('block_custom')
 						->expression('body', 'replace(body, :find, :replace)', [
 							':find' => $find,
 							':replace' => $replace
-						])->condition('bid', $find_block->bid, '=')->execute();
+						])->condition('bid', $find_block->bid)->execute();
 				}
 
 				/** Обновляем содержимое нод на актуальную ссылку. **/
@@ -277,7 +315,7 @@ function find_and_replace_sar_processing($find_block, $entity_type, &$context)
 						->expression('body_value', 'replace(body_value, :find, :replace)', [
 							':find' => $find,
 							':replace' => $replace
-						])->condition('entity_id', $find_block->entity_id, '=')->execute();
+						])->condition('entity_id', $find_block->entity_id)->execute();
 				}
 
 				/** Обновляем содержимое терминов на актуальную ссылку. **/
@@ -286,8 +324,49 @@ function find_and_replace_sar_processing($find_block, $entity_type, &$context)
 						->expression('description', 'replace(description, :find, :replace)', [
 							':find' => $find,
 							':replace' => $replace
-						])->condition('tid', $find_block->tid, '=')->execute();
+						])->condition('tid', $find_block->tid)->execute();
 				}
+
+				/** Обновляем содержимое кастомных панелей на актуальную ссылку. **/
+				if ($entity_type == 'panel' and !empty($find) and !empty($replace)) {
+
+					if ($find_block->pid == 636) {
+						dpm($find_block);
+						dpm($find_redirect);
+
+						// Разсериализуем строку в массив.
+						$unserialize_var = unserialize($find_block->configuration);
+
+						// Находим и меняем ссылку.
+						$unserialize_var['body'] = str_replace($find, $replace, $unserialize_var['body']);
+
+						// Сериализуем массив с троку для записи в базу.
+						$serialize_var = serialize($unserialize_var);
+
+						dpm($serialize_var);
+
+
+						// Обновляем данные
+						if (isset($serialize_var) and !empty($serialize_var)) {
+//							db_update('panels_pane')
+//								->fields(['configuration' => $serialize_var])
+//								->condition('pid', $find_block->pid)->execute();
+						}
+
+					}
+
+				}
+
+				// Записываем в таблицу статистики изменения в блоке
+				if (!empty($find) and !empty($replace) and !empty($entity_id))
+				$id_stat = db_insert('find_and_replace_stats')
+					->fields([
+						'type' => $entity_type,
+						'id_entity' => $entity_id,
+						'searched' => $find,
+						'replaced' => $replace,
+						'time' => REQUEST_TIME,
+					])->execute();
 
 				// Считаем обновленных сущностей.
 				$context['results']['updated']++;
