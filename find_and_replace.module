@@ -330,29 +330,20 @@ function find_and_replace_sar_processing($find_block, $entity_type, &$context)
 				/** Обновляем содержимое кастомных панелей на актуальную ссылку. **/
 				if ($entity_type == 'panel' and !empty($find) and !empty($replace)) {
 
-					if ($find_block->pid == 636) {
-						dpm($find_block);
-						dpm($find_redirect);
+					// Разсериализуем строку в массив.
+					$unserialize_var = unserialize($find_block->configuration);
 
-						// Разсериализуем строку в массив.
-						$unserialize_var = unserialize($find_block->configuration);
+					// Находим и меняем ссылку.
+					$unserialize_var['body'] = str_replace($find, $replace, $unserialize_var['body']);
 
-						// Находим и меняем ссылку.
-						$unserialize_var['body'] = str_replace($find, $replace, $unserialize_var['body']);
+					// Сериализуем массив с троку для записи в базу.
+					$serialize_var = serialize($unserialize_var);
 
-						// Сериализуем массив с троку для записи в базу.
-						$serialize_var = serialize($unserialize_var);
-
-						dpm($serialize_var);
-
-
-						// Обновляем данные
-						if (isset($serialize_var) and !empty($serialize_var)) {
-//							db_update('panels_pane')
-//								->fields(['configuration' => $serialize_var])
-//								->condition('pid', $find_block->pid)->execute();
-						}
-
+					// Обновляем данные
+					if (isset($serialize_var) and !empty($serialize_var)) {
+						db_update('panels_pane')
+							->fields(['configuration' => $serialize_var])
+							->condition('pid', $find_block->pid)->execute();
 					}
 
 				}
