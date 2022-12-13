@@ -142,7 +142,6 @@ function find_and_replace_sar_form($form, &$form_state)
 			'node' => 'Nodes',
 			'term' => 'Terms',
 			'panel' => 'Panels',
-			'comment' => 'Comments (disable)',
 		],
 	];
 
@@ -194,15 +193,6 @@ function find_and_replace_sar_form_submit($form, &$form_state)
 			->fields('pane', ['pid', 'configuration'])
 			->condition('pane.type', 'custom')
 			->execute()->fetchAll();
-	}
-
-	/** Обрабатываем КОММЕНТАРИИ **/
-	if ($entity_type == 'comment') {
-		// Получаем все блоки для поиска ссылок.
-//		$find_blocks = db_select('field_data_comment_body', 'comment')
-//			->fields('comment', ['entity_id', 'comment_body_value'])
-//			->execute()->fetchAll();
-		// TODO: Реализовать загрузку и обработку комментариев
 	}
 
 	if (!empty($find_blocks)) {
